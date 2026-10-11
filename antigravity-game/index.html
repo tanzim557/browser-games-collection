@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project Antigravity</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+      <div class="loading-inner">
+        <div class="logo">PROJECT<br/><span>ANTIGRAVITY</span></div>
+        <div class="spinner"></div>
+        <p id="status">Initializing...</p>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div id="speedometer">
+        <div id="speed-val">0</div>
+        <div id="speed-unit">KM/H</div>
+      </div>
+      <div id="controls-hint">
+        <span class="k">W</span> Accelerate &nbsp;
+        <span class="k">S</span> Brake &nbsp;
+        <span class="k">A</span><span class="k">D</span> Steer &nbsp;
+        <span class="k">SPACE</span> Handbrake
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

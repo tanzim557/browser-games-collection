@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Racing Game | Local OBJ Support</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: sans-serif; }
+        #ui {
+            position: absolute; top: 20px; left: 20px; color: white;
+            background: rgba(0, 0, 0, 0.6); padding: 20px; border-radius: 12px; z-index: 10;
+            backdrop-filter: blur(5px);
+        }
+        h1 { margin: 0 0 10px 0; font-size: 24px; color: #f39c12; }
+        p { margin: 5px 0; font-size: 14px; }
+        .key { background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+        #speedometer {
+            position: absolute; bottom: 30px; right: 30px;
+            background: rgba(0, 0, 0, 0.6); padding: 15px 30px; border-radius: 12px;
+            color: #2ecc71; font-size: 32px; font-weight: bold; z-index: 10;
+        }
+        #loading {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; color: white; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+        }
+        #error-message { color: #f39c12; margin-top: 20px; display: none; text-align: center; max-width: 600px;}
+        #skip-btn { 
+            margin-top: 15px; padding: 10px 20px; background: #3498db; 
+            color: white; border: none; border-radius: 5px; cursor: pointer;
+            font-size: 16px;
+        }
+        #file-input-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            border: 2px dashed #f39c12;
+        }
+        #file-input-container h3 { margin-top: 0; color: #2ecc71; }
+    </style>
+    <!-- Load Three.js and Loaders -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+</head>
+<body>
+    <div id="loading">
+        <h2>Loading Game...</h2>
+        <div id="error-message">
+            <p>Could not auto-load <code>car.obj</code> because the file was opened directly in the browser without a web server (CORS error).</p>
+            
+            <div id="file-input-container">
+                <h3>Select your car.obj manually:</h3>
+                <p>Since you are not using a local server, you can load your 3D model directly by selecting it here:</p>
+                <input type="file" id="objFileInput" accept=".obj" />
+            </div>
+
+            <button id="skip-btn" onclick="startGame()">Play Anyway (Use Red Box Car)</button>
+        </div>
+    </div>
+
+    <div id="ui">
+        <h1>DRIFT 3D</h1>
+        <p><span class="key">W</span> Accelerate | <span class="key">S</span> Brake</p>
+        <p><span class="key">A</span> Steer Left | <span class="key">D</span> Steer Right</p>
+        <p><span class="key">Space</span> Handbrake</p>
+    </div>
+    
+    <div id="speedometer">0 KM/H</div>
+
+    <script>
+        // --- 1. Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#87CEEB'); 
+        scene.fog = new THREE.FogExp2('#87CEEB', 0.003);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // --- 2. Lighting ---
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        dirLight.position.set(100, 200, 50);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.near = 0.5; dirLight.shadow.camera.far = 800;
+        dirLight.shadow.camera.left = -200; dirLight.shadow.camera.right = 200;
+        dirLight.shadow.camera.top = 200; dirLight.shadow.camera.bottom = -200;
+        scene.add(dirLight);
+
+        // --- 3. Environment ---
+        const plane = new THREE.Mesh(
+            new THREE.PlaneGeometry(4000, 4000), 
+            new THREE.MeshStandardMaterial({ color: '#34495e', roughness: 0.9 })
+        );
+        plane.rotation.x = -Math.PI / 2;
+        plane.receiveShadow = true;
+        scene.add(plane);
+        
+        const grid = new THREE.GridHelper(4000, 400, 0x000000, 0x000000);
+        grid.material.opacity = 0.2; grid.material.transparent = true; grid.position.y = 0.1;
+        scene.add(grid);
+
+        // Procedural Trees
+        function createProceduralTree(x, z) {
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.8, 4), new THREE.MeshStandardMaterial({color: '#5D4037'}));
+            trunk.position.y = 2; trunk.castShadow = true; tree.add(trunk);
+            const leaves = new THREE.Mesh(new THREE.DodecahedronGeometry(3), new THREE.MeshStandardMaterial({color: '#2E7D32'}));
+            leaves.position.y = 5; leaves.castShadow = true; tree.add(leaves);
+            tree.position.set(x, 0, z);
+            scene.add(tree);
+        }
+        for(let i=0; i<100; i++) {
+            const r = 60 + Math.random() * 500, a = Math.random() * Math.PI * 2;
+            createProceduralTree(Math.cos(a)*r, Math.sin(a)*r);
+        }
+
+        // --- 4. Asset Loading (Local OBJ) ---
+        let carGroup = new THREE.Group();
+        scene.add(carGroup);
+
+        function createFallbackCar() {
+            while(carGroup.children.length > 0){ carGroup.remove(carGroup.children[0]); }
+            const box = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 4.5), new THREE.MeshStandardMaterial({color: 0xff0000}));
+            box.position.y = 0.6; box.castShadow = true;
+            carGroup.add(box);
+        }
+
+        function startGame() {
+            document.getElementById('loading').style.display = 'none';
+            if (carGroup.children.length === 0) {
+                createFallbackCar();
+            }
+            if(!gameStarted) { gameStarted = true; animate(); }
+        }
+
+        let gameStarted = false;
+        const objLoader = new THREE.OBJLoader();
+        
+        function setupCarMesh(object) {
+            object.scale.set(0.8, 0.8, 0.8); // Adjust this scale if your model is too big/small
+            object.traverse(function (child) {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    // Give it a default red material if it has none
+                    if(!child.material || child.material.length === 0 || child.material.name === 'default') {
+                        child.material = new THREE.MeshStandardMaterial({ color: 0xff0000, metalness: 0.6, roughness: 0.4 });
+                    }
+                }
+            });
+            while(carGroup.children.length > 0){ carGroup.remove(carGroup.children[0]); }
+            carGroup.add(object);
+            startGame();
+        }
+
+        // 1. Attempt automatic load via URL (works only with local server)
+        objLoader.load('car.obj', function (object) {
+            setupCarMesh(object);
+        }, undefined, function (error) {
+            console.warn('Could not auto-load car.obj. Showing file selector.');
+            document.getElementById('error-message').style.display = 'block';
+        });
+
+        // 2. Manual File Input (bypasses browser security / local server requirement!)
+        document.getElementById('objFileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                document.getElementById('error-message').innerHTML = "<h3>Parsing 3D Model... Please wait!</h3>";
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const contents = e.target.result;
+                        const object = objLoader.parse(contents);
+                        setupCarMesh(object);
+                    } catch (err) {
+                        console.error(err);
+                        alert("Error parsing the OBJ file. It might be corrupted or in the wrong format.");
+                        createFallbackCar();
+                        startGame();
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+
+        // --- 5. Game Logic & Physics Setup ---
+        const state = { speed: 0, maxSpeed: 3.5, maxReverse: -1.0, acceleration: 0.025, braking: 0.06, friction: 0.01, steerAngle: 0, maxSteerAngle: 0.04, steerSpeed: 0.0025, steerReturn: 0.004 };
+        const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, ' ': false };
+        window.addEventListener('keydown', (e) => { if (keys.hasOwnProperty(e.key)) keys[e.key] = true; if(e.key === ' ') e.preventDefault(); });
+        window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+        const speedUI = document.getElementById('speedometer');
+        const cameraOffset = new THREE.Vector3(0, 4, -10);
+        const lookAtOffset = new THREE.Vector3(0, 1.0, 6);
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Inputs & Speed
+            if (keys.w || keys.ArrowUp) state.speed += state.acceleration;
+            else if (keys.s || keys.ArrowDown) state.speed -= state.braking;
+            else {
+                if (state.speed > 0) state.speed = Math.max(0, state.speed - state.friction);
+                else if (state.speed < 0) state.speed = Math.min(0, state.speed + state.friction);
+            }
+            if (keys[' ']) {
+                if (state.speed > 0) state.speed = Math.max(0, state.speed - state.braking * 1.5);
+                else if (state.speed < 0) state.speed = Math.min(0, state.speed + state.braking * 1.5);
+            }
+            state.speed = Math.max(state.maxReverse, Math.min(state.maxSpeed, state.speed));
+
+            // Steering
+            if (Math.abs(state.speed) > 0.05) {
+                let currentSteerSpeed = state.steerSpeed * (1 - (Math.abs(state.speed) / state.maxSpeed) * 0.5);
+                if (state.speed < 0) currentSteerSpeed *= -1;
+                if (keys.a || keys.ArrowLeft) state.steerAngle += currentSteerSpeed;
+                else if (keys.d || keys.ArrowRight) state.steerAngle -= currentSteerSpeed;
+                else {
+                    if (state.steerAngle > 0) state.steerAngle = Math.max(0, state.steerAngle - state.steerReturn);
+                    else if (state.steerAngle < 0) state.steerAngle = Math.min(0, state.steerAngle + state.steerReturn);
+                }
+            }
+            state.steerAngle = Math.max(-state.maxSteerAngle, Math.min(state.maxSteerAngle, state.steerAngle));
+
+            // Apply rotation & movement
+            if (Math.abs(state.speed) > 0.01) carGroup.rotation.y += state.steerAngle * (state.speed * 15);
+            const forward = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), carGroup.rotation.y);
+            carGroup.position.add(forward.multiplyScalar(state.speed));
+
+            // UI
+            speedUI.innerText = Math.floor(Math.abs(state.speed) * 80) + ' KM/H';
+
+            // Camera
+            camera.position.lerp(cameraOffset.clone().applyMatrix4(carGroup.matrixWorld), 0.15);
+            camera.lookAt(lookAtOffset.clone().applyMatrix4(carGroup.matrixWorld));
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
